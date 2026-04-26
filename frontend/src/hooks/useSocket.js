@@ -8,6 +8,7 @@ export function useSocket() {
   const wsRef = useRef(null);
   const latestPayloadRef = useRef(null);
   const rafRef = useRef(null);
+  const environmentRef = useRef(null);
 
   const send = useCallback((msg) => {
     const ws = wsRef.current;
@@ -22,7 +23,17 @@ export function useSocket() {
 
     const flush = () => {
       if (latestPayloadRef.current) {
-        setData(latestPayloadRef.current);
+        const payload = latestPayloadRef.current;
+        if (payload.type === 'snapshot') {
+          // Merge static environment if missing in snapshot
+          if (!payload.environment && environmentRef.current) {
+            payload.environment = {
+                ...environmentRef.current,
+                food: payload.food || []
+            };
+          }
+        }
+        setData(payload);
         latestPayloadRef.current = null;
       }
       rafRef.current = null;
@@ -49,7 +60,12 @@ export function useSocket() {
         try {
           const payload = JSON.parse(event.data);
 
-          if (payload.environment || payload.body || payload.brain) {
+          if (payload.type === 'init') {
+            if (payload.config?.env) {
+              environmentRef.current = payload.config.env;
+            }
+            setLog(payload.message || 'init');
+          } else if (payload.type === 'snapshot') {
             latestPayloadRef.current = payload;
             scheduleFlush();
           } else if (payload.status) {

@@ -22,14 +22,40 @@ class Body:
         self.wall_margin = config.wall_margin
         self.wall_penalty = config.wall_penalty
         self.memory = 0.0
-        self.sensors: Dict[str, float] = {"hunger":0.0,"eye_left":0.0,"eye_center":0.0,"eye_right":0.0,"smell":0.0,"wall_left":0.0,"wall_right":0.0,"wall_front":0.0,"memory":0.0,"novelty":0.0,"stuck":0.0,"rand":0.0}
+        self.last_collision = "none"
+        self.last_speed = 0.0
+        self.sensors: Dict[str, float] = {
+            "hunger":0.0,
+            "eye_left":0.0,
+            "eye_center":0.0,
+            "eye_right":0.0,
+            "smell":0.0,
+            "wall_left":0.0,
+            "wall_right":0.0,
+            "wall_front":0.0,
+            "memory":0.0,
+            "novelty":0.0,
+            "stuck":0.0,
+            "rand":0.0,
+            "food_dx":0.0,
+            "food_dy":0.0,
+            "food_dz":0.0,
+            "food_dist":0.0,
+            "floor_dist":0.0,
+            "ceiling_dist":0.0,
+            "energy":1.0,
+            "speed_sensor":0.0,
+            "algae_near":0.0,
+            "current_x":0.0,
+            "current_z":0.0
+        }
 
-    def update(self, dt: float, cmd: Dict[str, float]):
+    def update(self, dt: float, cmd: Dict[str, float], env_w: float = 800, env_h: float = 600, env_d: float = 800, current: tuple = (0,0,0)):
         forward, backward, turbo = cmd.get("forward",0.0), cmd.get("backward",0.0), cmd.get("turbo",0.0)
         yaw_cmd, pitch_cmd, roll_cmd = cmd.get("yaw",0.0), cmd.get("pitch",0.0), cmd.get("roll",0.0)
         self.yaw += yaw_cmd * self.yaw_speed * dt
         self.pitch = max(-math.pi/3, min(math.pi/3, self.pitch + pitch_cmd * self.pitch_speed * dt))
-        self.roll += roll_cmd * self.roll_speed * dt          # <-- своя скорость крена
+        self.roll += roll_cmd * self.roll_speed * dt
         move_dir, move_strength = (1.0, forward) if forward > 0.5 else ((-1.0, backward) if backward > 0.5 else (0.0, 0.0))
         speed = self.turbo_speed if turbo > 0.5 else self.speed
         cos_p = math.cos(self.pitch)
@@ -39,17 +65,34 @@ class Body:
         if move_dir:
             displacement = move_dir * move_strength * speed * dt
             new_x, new_y, new_z = self.x + displacement * dx, self.y + displacement * dy, self.z + displacement * dz
+            self.last_speed = (move_dir * move_strength * speed) / self.turbo_speed
         else:
             new_x, new_y, new_z = self.x, self.y, self.z
+            self.last_speed = 0.0
+
+        # Apply water current
+        new_x += current[0] * dt
+        new_y += current[1] * dt
+        new_z += current[2] * dt
+
         m = self.wall_margin
-        wall_hit = False
-        if new_x < m: new_x = m; self.yaw = math.pi - self.yaw; wall_hit = True
-        elif new_x > 800 - m: new_x = 800 - m; self.yaw = math.pi - self.yaw; wall_hit = True
-        if new_y < m: new_y = m; self.pitch = abs(self.pitch); wall_hit = True
-        elif new_y > 600 - m: new_y = 600 - m; self.pitch = -abs(self.pitch); wall_hit = True
-        if new_z < m: new_z = m; self.yaw = -self.yaw; wall_hit = True
-        elif new_z > 800 - m: new_z = 800 - m; self.yaw = -self.yaw; wall_hit = True
-        if wall_hit:
+        self.last_collision = "none"
+        if new_x < m:
+            new_x = m; self.yaw = math.pi - self.yaw; self.last_collision = "wall_x"
+        elif new_x > env_w - m:
+            new_x = env_w - m; self.yaw = math.pi - self.yaw; self.last_collision = "wall_x"
+
+        if new_y < m:
+            new_y = m; self.pitch = abs(self.pitch); self.last_collision = "floor"
+        elif new_y > env_h - m:
+            new_y = env_h - m; self.pitch = -abs(self.pitch); self.last_collision = "wall_y"
+
+        if new_z < m:
+            new_z = m; self.yaw = -self.yaw; self.last_collision = "wall_z"
+        elif new_z > env_d - m:
+            new_z = env_d - m; self.yaw = -self.yaw; self.last_collision = "wall_z"
+
+        if self.last_collision != "none":
             self.energy -= self.wall_penalty
         self.x, self.y, self.z = new_x, new_y, new_z
         energy_cost = self.base_metabolism * dt
@@ -68,14 +111,14 @@ class Body:
         self.sensors["memory"] = self.memory
 
     def get_sensors(self): return self.sensors.copy()
-    def get_state(self) -> Dict[str, Any]: return {"x":self.x,"y":self.y,"z":self.z,"yaw":self.yaw,"pitch":self.pitch,"roll":self.roll,"energy":self.energy,"max_energy":self.max_energy}
+    def get_state(self) -> Dict[str, Any]: return {"x":self.x,"y":self.y,"z":self.z,"yaw":self.yaw,"pitch":self.pitch,"roll":self.roll,"energy":self.energy,"max_energy":self.max_energy, "last_collision": self.last_collision}
 
     @classmethod
-    def random_placement(cls, config: PhysicsConfig):
+    def random_placement(cls, config: PhysicsConfig, env_w: float = 800, env_h: float = 600, env_d: float = 800):
         return cls(
-            GLOBAL_ENTROPY.uniform(100, 700),
-            GLOBAL_ENTROPY.uniform(100, 500),
-            GLOBAL_ENTROPY.uniform(100, 700),
+            GLOBAL_ENTROPY.uniform(env_w * 0.1, env_w * 0.9),
+            GLOBAL_ENTROPY.uniform(env_h * 0.1, env_h * 0.9),
+            GLOBAL_ENTROPY.uniform(env_d * 0.1, env_d * 0.9),
             config,
             GLOBAL_ENTROPY.uniform(-math.pi, math.pi),
             GLOBAL_ENTROPY.uniform(-math.pi/6, math.pi/6),

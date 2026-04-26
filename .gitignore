@@ -1,0 +1,11 @@
+
+node_modules/
+dist/
+venv/
+__pycache__/
+*.log
+data/
+verification/
+scripts/
+checkpoint.json
+best_genome.pkl

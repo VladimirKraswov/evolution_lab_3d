@@ -16,5 +16,20 @@ export function BrainCanvas({ brain }) {
     drawBrain(ctx, brain, rect.width, rect.height);
   }, [brain]);
 
-  return <canvas class="brain" ref={ref} />;
+  const stats = brain?.connections ? {
+    total: brain.connections.length,
+    enabled: brain.connections.filter(c => c.enabled).length,
+    nodes: brain.nodes?.length || 0
+  } : null;
+
+  return (
+    <div class="brainContainer">
+      <canvas class="brain" ref={ref} />
+      {stats && (
+        <div class="brainStats">
+          {stats.nodes} nodes · {stats.enabled}/{stats.total} conns
+        </div>
+      )}
+    </div>
+  );
 }

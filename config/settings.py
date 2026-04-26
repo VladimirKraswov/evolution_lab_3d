@@ -29,7 +29,7 @@ class PhysicsConfig:
 
 @dataclass
 class BrainConfig:
-    input_size: int = 12
+    input_size: int = 24
     output_size: int = 6
 
 

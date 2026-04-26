@@ -113,33 +113,46 @@ function drawFood(ctx, food, center, camera, width, height) {
     .filter(x => x.q.visible)
     .sort((a, b) => b.q.d - a.q.d);
 
-  for (const { q } of sorted) {
-    const r = clamp(q.s * 9, 2.5, 14);
+  for (const { f, q } of sorted) {
+    const isRich = f.type === 'rich';
+    const r = clamp(q.s * (isRich ? 14 : 9), 2.5, 20);
 
     ctx.beginPath();
-    ctx.fillStyle = '#86efac';
-    ctx.shadowColor = '#22c55e';
-    ctx.shadowBlur = 16;
+    ctx.fillStyle = isRich ? '#fde047' : '#86efac';
+    ctx.shadowColor = isRich ? '#eab308' : '#22c55e';
+    ctx.shadowBlur = isRich ? 24 : 16;
     ctx.arc(q.x, q.y, r, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(220,252,231,.8)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = isRich ? 'rgba(254, 249, 195, 0.9)' : 'rgba(220,252,231,.8)';
+    ctx.lineWidth = isRich ? 2 : 1;
     ctx.stroke();
+
+    if (isRich) {
+       ctx.beginPath();
+       ctx.arc(q.x, q.y, r * 1.5, 0, Math.PI * 2);
+       ctx.strokeStyle = 'rgba(253, 224, 71, 0.2)';
+       ctx.stroke();
+    }
   }
 }
 
-function drawBody(ctx, body, center, camera, width, height) {
+function drawBody(ctx, body, center, camera, width, height, timestamp) {
   const q = project(body, center, camera, width, height);
   if (!q.visible) return;
 
   const size = clamp(q.s * 28, 10, 38);
   const yawOnScreen = body.yaw - camera.yaw;
+  const pitchOnScreen = body.pitch;
 
   ctx.save();
   ctx.translate(q.x, q.y);
   ctx.rotate(yawOnScreen);
+
+  // Tail animation
+  const t = timestamp * 0.005;
+  const tailSwing = Math.sin(t) * 0.3;
 
   ctx.shadowColor = '#66e3ff';
   ctx.shadowBlur = 22;
@@ -150,11 +163,22 @@ function drawBody(ctx, body, center, camera, width, height) {
   grad.addColorStop(1, '#2563eb');
 
   ctx.fillStyle = grad;
+
+  // Body
   ctx.beginPath();
   ctx.moveTo(0, -size);
-  ctx.lineTo(size * 0.72, size * 0.82);
+  ctx.lineTo(size * 0.72, size * 0.5);
   ctx.lineTo(0, size * 0.35);
-  ctx.lineTo(-size * 0.72, size * 0.82);
+  ctx.lineTo(-size * 0.72, size * 0.5);
+  ctx.closePath();
+  ctx.fill();
+
+  // Tail
+  ctx.beginPath();
+  ctx.moveTo(0, size * 0.35);
+  ctx.quadraticCurveTo(size * tailSwing, size * 1.2, size * tailSwing * 2, size * 1.8);
+  ctx.lineTo(size * (tailSwing * 2 + 0.4), size * 2.0);
+  ctx.lineTo(size * (tailSwing * 2 - 0.4), size * 2.0);
   ctx.closePath();
   ctx.fill();
 
@@ -163,13 +187,47 @@ function drawBody(ctx, body, center, camera, width, height) {
   ctx.lineWidth = 1.2;
   ctx.stroke();
 
+  // Eye/Antenna
   ctx.strokeStyle = 'rgba(102,227,255,.5)';
   ctx.beginPath();
   ctx.moveTo(0, -size);
-  ctx.lineTo(0, -size * 2.2);
+  ctx.lineTo(0, -size * 1.5);
   ctx.stroke();
 
   ctx.restore();
+}
+
+const bubbles = [];
+function drawBubbles(ctx, center, camera, width, height, timestamp) {
+    if (bubbles.length < 30) {
+        bubbles.push({
+            x: Math.random() * 800,
+            y: 0,
+            z: Math.random() * 800,
+            r: Math.random() * 3 + 1,
+            speed: Math.random() * 20 + 10
+        });
+    }
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.lineWidth = 1;
+
+    for (let i = bubbles.length - 1; i >= 0; i--) {
+        const b = bubbles[i];
+        b.y += b.speed * 0.016; // Approx 60fps
+        if (b.y > 600) {
+            b.y = 0;
+            b.x = Math.random() * 800;
+            b.z = Math.random() * 800;
+        }
+
+        const q = project(b, center, camera, width, height);
+        if (q.visible) {
+            ctx.beginPath();
+            ctx.arc(q.x, q.y, b.r * q.s, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+    }
 }
 
 export function drawWorld(ctx, data, camera, width, height) {
@@ -194,8 +252,9 @@ export function drawWorld(ctx, data, camera, width, height) {
 
   drawGrid(ctx, env, center, camera, width, height);
   drawBox(ctx, env, center, camera, width, height);
+  drawBubbles(ctx, center, camera, width, height, data.timestamp);
   drawFood(ctx, env.food || [], center, camera, width, height);
-  drawBody(ctx, body, center, camera, width, height);
+  drawBody(ctx, body, center, camera, width, height, data.timestamp);
 
   ctx.fillStyle = 'rgba(15,23,42,.72)';
   ctx.strokeStyle = 'rgba(148,163,184,.25)';
