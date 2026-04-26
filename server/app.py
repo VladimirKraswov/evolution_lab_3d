@@ -41,7 +41,7 @@ def create_app(sim_manager: SimulationManager, neat_runner: NEATRunner) -> FastA
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
-        await ws_handler.connect(websocket)
+        await ws_handler.connect(websocket, sim_manager=sim_manager)
 
         if sim_manager.visualization_data:
             try:
@@ -50,14 +50,10 @@ def create_app(sim_manager: SimulationManager, neat_runner: NEATRunner) -> FastA
                 logger.warning(f"Не удалось отправить initial snapshot: {e}")
 
         try:
+            # We don't need the manual receive loop here because ws_handler.connect
+            # now spawns a listener task that pipes to sim_manager.command_queue
             while True:
-                raw = await websocket.receive_text()
-                try:
-                    command = json.loads(raw)
-                    await sim_manager.command_queue.put(command)
-                except Exception as e:
-                    logger.warning(f"Некорректная команда от клиента: {e}")
-
+                await asyncio.sleep(10)
         except WebSocketDisconnect:
             logger.info("Клиент отключился")
         except Exception as e:

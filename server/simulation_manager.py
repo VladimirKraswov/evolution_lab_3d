@@ -49,7 +49,12 @@ class SimulationManager:
 
     def _init_demo(self):
         self.env.reset(initial_food=self.config.env.initial_food_count)
-        self.body = Body.random_placement(self.config.physics)
+        self.body = Body.random_placement(
+            self.config.physics,
+            self.config.env.width,
+            self.config.env.height,
+            self.config.env.depth
+        )
         self.demo_steps = 0
         self.demo_active = True
         self._idle_steps = 0
@@ -186,14 +191,31 @@ class SimulationManager:
         while not self.command_queue.empty() and handled < 20:
             try:
                 command = await self.command_queue.get()
-                # Здесь можно обрабатывать команды от клиента
+                action = command.get("action")
+
+                if action == "train":
+                    count = command.get("count", 5)
+                    if self.training_process:
+                        self.training_process.train(count)
+                        logger.info(f"Command: train {count} gens")
+                elif action == "reset_training":
+                    # For safety, let's just delete files if we really want to reset
+                    import os
+                    for f in ["best_genome.pkl", "checkpoint.json"]:
+                        if os.path.exists(f): os.remove(f)
+                    # We would also need to re-init runner, but that might be complex
+                    # Simple way: just stop/start training process
+                    if self.training_process:
+                        self.training_process.stop()
+                        self.runner.load_checkpoint() # reload (will fail and reset)
+                        self.training_process.start()
+                    logger.info("Command: reset training")
+
                 handled += 1
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Error handling command: {e}")
 
     def _update_demo(self, dt: float):
-        # ... (без изменений, как в исходном коде, но вызов update_sensors и т.д.)
-        # Оставим полный код для ясности
         if not self.body or not self.demo_active:
             return
 
@@ -203,20 +225,8 @@ class SimulationManager:
 
         update_sensors(self.body, self.env)
 
-        inputs = [
-            self.body.sensors["hunger"],
-            self.body.sensors.get("eye_left", 0.0),
-            self.body.sensors.get("eye_center", 0.0),
-            self.body.sensors.get("eye_right", 0.0),
-            self.body.sensors.get("smell", 0.0),
-            self.body.sensors.get("wall_left", 0.0),
-            self.body.sensors.get("wall_right", 0.0),
-            self.body.sensors.get("wall_front", 0.0),
-            self.body.sensors.get("memory", 0.0),
-            self.body.sensors.get("novelty", 0.0),
-            self.body.sensors.get("stuck", 0.0),
-            self.body.sensors.get("rand", 0.0),
-        ]
+        from evolution.evaluator import brain_inputs
+        inputs = brain_inputs(self.body.get_sensors())
 
         output = self.runner.best_net.activate(inputs)
         self.last_outputs = [float(x) for x in output]
@@ -233,7 +243,15 @@ class SimulationManager:
         }
 
         self.last_cmd = cmd
-        self.body.update(dt, cmd)
+        cur = self.env.current_at(self.body.x, self.body.y, self.body.z)
+        self.body.update(
+            dt,
+            cmd,
+            self.config.env.width,
+            self.config.env.height,
+            self.config.env.depth,
+            current=cur
+        )
 
         if check_eat(self.body, self.env):
             self.demo_steps = max(0, self.demo_steps - int(self.sim_hz * 3))
@@ -244,24 +262,29 @@ class SimulationManager:
             self.env.spawn_food(1)
 
     def _build_viz_data(self, now: float):
-        # ... (без изменений)
         if not self.body:
             return None
+
+        training_status = {
+            "busy": self.training_process.busy if self.training_process else False,
+            "pending": self.training_process.pending_generations if self.training_process else 0,
+            "last_duration": self.training_process.last_duration_sec if self.training_process else 0
+        }
 
         return {
             "type": "snapshot",
             "timestamp": now,
-            "environment": self.env.get_state(),
+            "food": self.env.food.copy(),
             "body": self.body.get_state(),
             "sensors": self.body.get_sensors(),
             "gen": self.runner.generation,
             "best_fitness": self.runner.best_fitness,
             "demo_steps": self.demo_steps,
             "brain": self._genome_to_graph(self.runner.best_genome),
+            "training": training_status
         }
 
     def _genome_to_graph(self, genome):
-        # ... (без изменений)
         if genome is None:
             return {"nodes": [], "connections": []}
 
@@ -272,6 +295,9 @@ class SimulationManager:
             "hunger", "eye_L", "eye_C", "eye_R", "smell",
             "wall_L", "wall_R", "wall_F", "memory",
             "novelty", "stuck", "rand",
+            "food_dx", "food_dy", "food_dz", "food_dist",
+            "floor_d", "ceil_d", "energy", "speed",
+            "algae", "curr_x", "curr_z", "pad"
         ]
         for i, label in enumerate(input_labels):
             nodes.append({"id": -i - 1, "layer": 0, "label": label, "type": "input"})
@@ -287,9 +313,11 @@ class SimulationManager:
                 )
 
         for conn_key, conn in genome.connections.items():
-            if conn.enabled:
-                connections.append(
-                    {"from": conn_key[0], "to": conn_key[1], "weight": conn.weight}
-                )
+            connections.append({
+                "from": conn_key[0],
+                "to": conn_key[1],
+                "weight": conn.weight,
+                "enabled": conn.enabled
+            })
 
         return {"nodes": nodes, "connections": connections}

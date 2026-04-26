@@ -23,14 +23,24 @@ export function drawBrain(ctx, brain, width, height) {
   conns.forEach(c => {
     const a = byId.get(c.from), b = byId.get(c.to);
     if (!a || !b) return;
-    const alpha = clamp(Math.abs(c.weight) / 4, .08, .8);
-    ctx.strokeStyle = c.weight >= 0 ? `rgba(102,227,255,${alpha})` : `rgba(255,107,107,${alpha})`;
-    ctx.lineWidth = clamp(Math.abs(c.weight), .4, 3);
+
+    if (!c.enabled) {
+      ctx.setLineDash([2, 2]);
+      ctx.strokeStyle = 'rgba(100, 116, 139, 0.2)';
+      ctx.lineWidth = 0.5;
+    } else {
+      ctx.setLineDash([]);
+      const alpha = clamp(Math.abs(c.weight) / 4, .15, .9);
+      ctx.strokeStyle = c.weight >= 0 ? `rgba(102, 227, 255, ${alpha})` : `rgba(255, 107, 107, ${alpha})`;
+      ctx.lineWidth = clamp(Math.abs(c.weight), 0.5, 4);
+    }
+
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
   });
+  ctx.setLineDash([]);
 
   byId.forEach(n => {
     const r = n.type === 'hidden' ? 8 : 7;
