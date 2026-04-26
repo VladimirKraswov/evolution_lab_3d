@@ -11,22 +11,28 @@ from fastapi.staticfiles import StaticFiles
 from .simulation_manager import SimulationManager
 from .websocket_handler import WebSocketHandler
 from evolution.runner import NEATRunner
+from services.texture_generator import ensure_generated_assets
 
 logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIST = ROOT / "frontend" / "dist"
+DATA_DIR = ROOT / "data"
 
 
 def create_app(sim_manager: SimulationManager, neat_runner: NEATRunner) -> FastAPI:
     ws_handler = WebSocketHandler()
+    ensure_generated_assets(DATA_DIR)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         sim_task = asyncio.create_task(sim_manager.run_loop(ws_handler))
         logger.info("Симуляция запущена")
+
         yield
+
         sim_task.cancel()
+
         try:
             await sim_task
         except asyncio.CancelledError:
@@ -34,8 +40,12 @@ def create_app(sim_manager: SimulationManager, neat_runner: NEATRunner) -> FastA
 
     app = FastAPI(lifespan=lifespan)
 
+    if DATA_DIR.exists():
+        app.mount("/data", StaticFiles(directory=DATA_DIR), name="data")
+
     if FRONTEND_DIST.exists():
         assets = FRONTEND_DIST / "assets"
+
         if assets.exists():
             app.mount("/assets", StaticFiles(directory=assets), name="assets")
 
@@ -52,6 +62,7 @@ def create_app(sim_manager: SimulationManager, neat_runner: NEATRunner) -> FastA
         try:
             while True:
                 raw = await websocket.receive_text()
+
                 try:
                     command = json.loads(raw)
                     await sim_manager.command_queue.put(command)
@@ -83,6 +94,7 @@ def create_app(sim_manager: SimulationManager, neat_runner: NEATRunner) -> FastA
     @app.get("/")
     async def root():
         index = FRONTEND_DIST / "index.html"
+
         if index.exists():
             return FileResponse(index)
 

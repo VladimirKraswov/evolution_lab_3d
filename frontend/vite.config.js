@@ -9,12 +9,16 @@ export default defineConfig({
     proxy: {
       '/ws': {
         target: 'ws://localhost:3030',
-        ws: true
-      }
-    }
+        ws: true,
+      },
+      '/data': {
+        target: 'http://localhost:3030',
+        changeOrigin: true,
+      },
+    },
   },
   build: {
     outDir: 'dist',
-    emptyOutDir: true
-  }
+    emptyOutDir: true,
+  },
 });
