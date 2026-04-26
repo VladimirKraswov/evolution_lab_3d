@@ -24,7 +24,7 @@ class Body:
         self.memory = 0.0
         self.sensors: Dict[str, float] = {"hunger":0.0,"eye_left":0.0,"eye_center":0.0,"eye_right":0.0,"smell":0.0,"wall_left":0.0,"wall_right":0.0,"wall_front":0.0,"memory":0.0,"novelty":0.0,"stuck":0.0,"rand":0.0}
 
-    def update(self, dt: float, cmd: Dict[str, float]):
+    def update(self, dt: float, cmd: Dict[str, float]) -> bool:
         forward, backward, turbo = cmd.get("forward",0.0), cmd.get("backward",0.0), cmd.get("turbo",0.0)
         yaw_cmd, pitch_cmd, roll_cmd = cmd.get("yaw",0.0), cmd.get("pitch",0.0), cmd.get("roll",0.0)
         self.yaw += yaw_cmd * self.yaw_speed * dt
@@ -66,6 +66,7 @@ class Body:
         self.sensors["hunger"] = min(1.0, 1.0 - self.energy / self.max_energy)
         self.memory = max(-1.0, min(1.0, 0.92 * self.memory + 0.08 * self.sensors["hunger"]))
         self.sensors["memory"] = self.memory
+        return wall_hit
 
     def get_sensors(self): return self.sensors.copy()
     def get_state(self) -> Dict[str, Any]: return {"x":self.x,"y":self.y,"z":self.z,"yaw":self.yaw,"pitch":self.pitch,"roll":self.roll,"energy":self.energy,"max_energy":self.max_energy}

@@ -82,9 +82,10 @@ class SimulationManager:
             result = self.training_process.poll()
             if result is not None:
                 if result.ok and result.best_genome_blob is not None:
+                    from evolution.evaluator import create_net
                     genome = pickle.loads(result.best_genome_blob)
                     self.runner.best_genome = genome
-                    self.runner.best_net = neat.nn.FeedForwardNetwork.create(
+                    self.runner.best_net = create_net(
                         genome, self.runner.neat_config
                     )
                     self.runner.best_fitness = result.best_fitness
@@ -143,9 +144,10 @@ class SimulationManager:
                             result = self.training_process.poll()
                             if result is not None:
                                 if result.ok and result.best_genome_blob is not None:
+                                    from evolution.evaluator import create_net
                                     genome = pickle.loads(result.best_genome_blob)
                                     self.runner.best_genome = genome
-                                    self.runner.best_net = neat.nn.FeedForwardNetwork.create(
+                                    self.runner.best_net = create_net(
                                         genome, self.runner.neat_config
                                     )
                                     self.runner.best_fitness = result.best_fitness

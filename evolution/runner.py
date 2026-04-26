@@ -42,19 +42,24 @@ class NEATRunner:
 
     def run_next_generation(self):
         """Одно полноценное поколение (оценка + размножение)."""
+        self._current_avg_fitness = 0.0
 
         # Локальная функция для передачи в population.run
         def eval_genomes(genomes, config):
             from .evaluator import evaluate_genome
+            total_fitness = 0.0
             for genome_id, genome in genomes:
                 fitness, _, _ = evaluate_genome(
                     genome,
                     config,
                     self.env_config,
                     self.physics_config,
-                    max_steps=1000,
+                    max_steps=2000,
                 )
                 genome.fitness = fitness
+                total_fitness += fitness
+            if genomes:
+                self._current_avg_fitness = total_fitness / len(genomes)
 
         # Главный вызов: оценка + скрещивание + мутации
         self.population.run(eval_genomes, 1)
@@ -67,15 +72,13 @@ class NEATRunner:
             logger.warning("best_genome is None after generation")
             return
 
-        avg_fitness = sum(g.fitness for g in self.population.population.values()
-                          ) / len(self.population.population)
-
-        logger.info(f"Gen {self.generation} | Avg: {avg_fitness:.1f} | Best: {best.fitness:.1f}")
+        logger.info(f"Gen {self.generation} | Avg: {self._current_avg_fitness:.1f} | Best: {best.fitness:.1f}")
 
         if best.fitness > self.best_fitness:
+            from .evaluator import create_net
             self.best_fitness = best.fitness
             self.best_genome = copy.deepcopy(best)
-            self.best_net = neat.nn.FeedForwardNetwork.create(self.best_genome, self.neat_config)
+            self.best_net = create_net(self.best_genome, self.neat_config)
             self.save_checkpoint()
             logger.info(f"*** NEW BEST: {self.best_fitness:.1f} ***")
 
@@ -95,9 +98,10 @@ class NEATRunner:
             logger.info("Чекпоинт не найден, стартуем с нуля")
             return
         try:
+            from .evaluator import create_net
             with open("best_genome.pkl", "rb") as f:
                 self.best_genome = pickle.load(f)
-            self.best_net = neat.nn.FeedForwardNetwork.create(self.best_genome, self.neat_config)
+            self.best_net = create_net(self.best_genome, self.neat_config)
             if Path(CHECKPOINT_FILE).exists():
                 with open(CHECKPOINT_FILE) as f:
                     data = json.load(f)

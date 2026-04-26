@@ -13,7 +13,7 @@ class EnvironmentConfig:
 @dataclass
 class PhysicsConfig:
     max_energy: float = 200.0
-    base_metabolism: float = 1.5
+    base_metabolism: float = 0.8
     move_cost: float = 3.0
     rotation_cost: float = 1.5
     speed: float = 100.0
