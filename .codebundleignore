@@ -1,0 +1,133 @@
+# =========================
+# CODE BUNDLE IGNORE
+# Что не включать в bundle для GPT/code review
+# =========================
+
+# --- VCS / IDE / system ---
+.git/
+.github/
+.gitlab/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+.project-root
+.llm-lab/
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- JS / Frontend ---
+node_modules/
+dist/
+build/
+.next/
+.nuxt/
+.svelte-kit/
+.parcel-cache/
+coverage/
+
+# --- Generated frontend assets ---
+public/
+assets/
+
+# --- Dependencies / vendor ---
+libs/
+
+# --- Logs / temp / outputs ---
+logs/
+log/
+tmp/
+temp/
+results/
+datasets/
+cache/
+
+# --- Locks / package managers ---
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+uv.lock
+poetry.lock
+
+# --- Local tools / generated bundle ---
+bundle-code.js
+codebundle.txt
+
+# --- Runtime / ML artifacts / checkpoints ---
+*.pkl
+*.pt
+*.pth
+*.onnx
+*.ckpt
+*.weights
+checkpoint.json
+best_genome.pkl
+
+# --- Binary / archives ---
+*.zip
+*.rar
+*.7z
+*.tar
+*.gz
+*.bz2
+*.xz
+
+# --- Images / media ---
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.ico
+*.svg
+*.mp4
+*.mp3
+*.wav
+*.mov
+*.avi
+
+# --- Fonts ---
+*.woff
+*.woff2
+*.ttf
+*.eot
+*.otf
+
+# --- Documents ---
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.ppt
+*.pptx
+
+# --- Usually noisy for code analysis ---
+*.css
+*.scss
+*.sass
+*.less
+*.html
+*.txt
+
+# --- Markdown docs (обычно исключаем, но можно вернуть через !README.md) ---
+*.md
+!README.md
+!readme.md
+
+# --- Project specific ---
+# fish_speech/i18n/
