@@ -1,0 +1,67 @@
+# ===========================
+# Python
+# ===========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# ===========================
+# Node / Frontend
+# ===========================
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.log
+npm-debug.log*
+
+# ===========================
+# IDE & Editors
+# ===========================
+.vscode/
+.idea/
+*.sublime-*
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===========================
+# Environment & Secrets
+# ===========================
+.env
+.env.*
+!.env.example
+
+# ===========================
+# Evolution artefacts (usually regenerated)
+# ===========================
+best_genome.pkl
+checkpoint.json
+
+# ===========================
+# Misc
+# ===========================
+*.egg-info/
+*.egg
+dist/
+build/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+mypy_cache/
+.ruff_cache/
+
+# Project-specific (optional)
+.codebundleignore
