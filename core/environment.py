@@ -121,6 +121,14 @@ class Environment:
 
         return algae
 
+    def current_at(self, x: float, y: float, z: float, time: float) -> tuple:
+        # Procedural, deterministic current
+        # Use simple sine waves
+        cx = math.sin(x * 0.005 + time * 0.5) * 5.0
+        cz = math.cos(z * 0.005 + time * 0.5) * 5.0
+        cy = math.sin(y * 0.01 + time * 0.3) * 2.0
+        return cx, cy, cz
+
     def spawn_food(self, count: int = 1):
         for _ in range(count):
             x = GLOBAL_ENTROPY.uniform(20, self.width - 20)
@@ -135,11 +143,20 @@ class Environment:
             else:
                 y = GLOBAL_ENTROPY.uniform(min_y, max_y)
 
+            # Different food types
+            ftype = "small"
+            energy = self.food_energy
+            if GLOBAL_ENTROPY.random() < 0.15:
+                ftype = "rich"
+                energy = self.food_energy * 2.5
+
             self.food.append({
                 "x": x,
                 "y": y,
                 "z": z,
-                "energy": self.food_energy,
+                "energy": energy,
+                "type": ftype,
+                "drift_seed": GLOBAL_ENTROPY.random() * 100.0
             })
 
     def remove_food(self, index: int):

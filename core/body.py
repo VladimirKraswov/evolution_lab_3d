@@ -43,6 +43,8 @@ class Body:
         self.wall_penalty = config.wall_penalty
 
         self.memory = 0.0
+        self.last_collision = "none"
+        self.last_step_speed = 0.0
 
         self.sensors: Dict[str, float] = {
             "hunger": 0.0,
@@ -53,6 +55,17 @@ class Body:
             "wall_left": 0.0,
             "wall_right": 0.0,
             "wall_front": 0.0,
+            "food_dx": 0.0,
+            "food_dy": 0.0,
+            "food_dz": 0.0,
+            "food_dist": 0.0,
+            "floor_dist": 0.0,
+            "ceiling_dist": 0.0,
+            "algae_near": 0.0,
+            "current_x": 0.0,
+            "current_y": 0.0,
+            "current_z": 0.0,
+            "speed": 0.0,
             "memory": 0.0,
             "novelty": 0.0,
             "stuck": 0.0,
@@ -97,46 +110,12 @@ class Body:
 
         if move_dir:
             displacement = move_dir * move_strength * speed * dt
-            new_x = self.x + displacement * dx
-            new_y = self.y + displacement * dy
-            new_z = self.z + displacement * dz
+            self.x += displacement * dx
+            self.y += displacement * dy
+            self.z += displacement * dz
+            self.last_step_speed = displacement / dt if dt > 0 else 0.0
         else:
-            new_x, new_y, new_z = self.x, self.y, self.z
-
-        m = self.wall_margin
-        wall_hit = False
-
-        if new_x < m:
-            new_x = m
-            self.yaw = math.pi - self.yaw
-            wall_hit = True
-        elif new_x > 800 - m:
-            new_x = 800 - m
-            self.yaw = math.pi - self.yaw
-            wall_hit = True
-
-        if new_y < m:
-            new_y = m
-            self.pitch = abs(self.pitch)
-            wall_hit = True
-        elif new_y > 600 - m:
-            new_y = 600 - m
-            self.pitch = -abs(self.pitch)
-            wall_hit = True
-
-        if new_z < m:
-            new_z = m
-            self.yaw = -self.yaw
-            wall_hit = True
-        elif new_z > 800 - m:
-            new_z = 800 - m
-            self.yaw = -self.yaw
-            wall_hit = True
-
-        if wall_hit:
-            self.energy = max(0.0, self.energy - self.wall_penalty)
-
-        self.x, self.y, self.z = new_x, new_y, new_z
+            self.last_step_speed = 0.0
 
         energy_cost = self.base_metabolism * dt
 
@@ -162,7 +141,7 @@ class Body:
         )
         self.sensors["memory"] = self.memory
 
-        return wall_hit
+        return self.last_collision != "none"
 
     def get_sensors(self):
         return self.sensors.copy()
@@ -177,14 +156,16 @@ class Body:
             "roll": self.roll,
             "energy": self.energy,
             "max_energy": self.max_energy,
+            "last_collision": self.last_collision,
         }
 
     @classmethod
-    def random_placement(cls, config: PhysicsConfig):
+    def random_placement(cls, config: PhysicsConfig, env_width=800, env_height=600, env_depth=800):
+        margin = 100.0
         return cls(
-            GLOBAL_ENTROPY.uniform(100, 700),
-            GLOBAL_ENTROPY.uniform(100, 500),
-            GLOBAL_ENTROPY.uniform(100, 700),
+            GLOBAL_ENTROPY.uniform(margin, env_width - margin),
+            GLOBAL_ENTROPY.uniform(margin, env_height - margin),
+            GLOBAL_ENTROPY.uniform(margin, env_depth - margin),
             config,
             GLOBAL_ENTROPY.uniform(-math.pi, math.pi),
             GLOBAL_ENTROPY.uniform(-math.pi / 6, math.pi / 6),

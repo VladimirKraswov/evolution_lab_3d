@@ -87,16 +87,17 @@ export function drawBrain(ctx, brain, width, height) {
     if (!a || !b) continue;
 
     const absW = Math.abs(Number(c.weight) || 0);
-    const alpha = clamp(absW / 4, 0.12, 0.9);
+    // Stronger connections are more opaque and thicker
+    const alpha = clamp(0.1 + (absW / 5.0), 0.2, 1.0);
 
     ctx.strokeStyle = weightColor(c.weight, alpha);
-    ctx.lineWidth = clamp(absW, 0.5, 3.2);
+    ctx.lineWidth = clamp(absW * 0.8, 0.8, 6.0);
 
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
 
     const midX = (a.x + b.x) * 0.5;
-    const bend = (b.y - a.y) * 0.08;
+    const bend = (b.y - a.y) * 0.08 + (c.weight > 0 ? 5 : -5);
 
     ctx.quadraticCurveTo(midX, (a.y + b.y) * 0.5 + bend, b.x, b.y);
     ctx.stroke();

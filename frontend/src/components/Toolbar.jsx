@@ -12,7 +12,9 @@ export function Toolbar({ send, camera, setCamera, resetCamera }) {
     <div class="toolbar">
       <button onClick={() => send({ action: 'next_gen' })}>Next gen</button>
       <button onClick={() => send({ action: 'skip_gens', count: 5 })}>+5 gens</button>
+      <button onClick={() => send({ action: 'skip_gens', count: 20 })}>+20 gens</button>
       <button onClick={() => send({ action: 'reset_demo' })}>Reset sim</button>
+      <button onClick={() => send({ action: 'reset_training' })}>Reset training</button>
 
       <span class="toolbarDivider" />
 

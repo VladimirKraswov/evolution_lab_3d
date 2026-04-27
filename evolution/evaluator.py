@@ -9,18 +9,30 @@ from core import Body, Environment, update_sensors, check_eat, clamp_to_environm
 
 def brain_inputs(sens):
     return [
-        sens["hunger"],
-        sens["eye_left"],
-        sens["eye_center"],
-        sens["eye_right"],
-        sens["smell"],
-        sens["wall_left"],
-        sens["wall_right"],
-        sens["wall_front"],
-        sens["memory"],
+        sens.get("hunger", 0.0),
+        sens.get("eye_left", 0.0),
+        sens.get("eye_center", 0.0),
+        sens.get("eye_right", 0.0),
+        sens.get("smell", 0.0),
+        sens.get("wall_left", 0.0),
+        sens.get("wall_right", 0.0),
+        sens.get("wall_front", 0.0),
+        sens.get("memory", 0.0),
         sens.get("novelty", 0.0),
         sens.get("stuck", 0.0),
         sens.get("rand", 0.0),
+        sens.get("food_dx", 0.0),
+        sens.get("food_dy", 0.0),
+        sens.get("food_dz", 0.0),
+        sens.get("food_dist", 0.0),
+        sens.get("floor_dist", 0.0),
+        sens.get("ceiling_dist", 0.0),
+        sens.get("algae_near", 0.0),
+        sens.get("speed", 0.0),
+        sens.get("current_x", 0.0),
+        sens.get("current_y", 0.0),
+        sens.get("current_z", 0.0),
+        sens.get("energy_status", 0.0), # Will add to update_sensors
     ]
 
 
@@ -61,109 +73,156 @@ def evaluate_genome(
     env = Environment(env_config)
     env.reset(initial_food=35)
 
-    body = Body.random_placement(physics_config)
+    body = Body.random_placement(
+        physics_config,
+        env_width=env.width,
+        env_height=env.height,
+        env_depth=env.depth,
+    )
     clamp_to_environment(body, env, physics_config)
 
     fitness = 0.0
-    eaten = 0
-    steps = 0
-    dt = 1.0 / 20.0
+    metrics = {
+        "eaten": 0,
+        "steps": 0,
+        "collisions": 0,
+        "stuck_steps": 0,
+        "total_distance": 0.0,
+        "approach_reward": 0.0,
+    }
 
+    dt = 1.0 / 20.0
     prev_x, prev_y, prev_z = body.x, body.y, body.z
-    total_distance = 0.0
     idle_steps = 0
     visited_cells = set()
-
     prev_food_dist = _nearest_food_distance(body, env)
 
-    while steps < max_steps and body.energy > 0:
+    # Track spinning
+    recent_yaws = []
+    env.time = 0.0
+
+    while metrics["steps"] < max_steps and body.energy > 0:
+        env.time += dt
+
+        # Update drifting food
+        for food in env.food:
+            seed = food.get("drift_seed", 0.0)
+            food["x"] += math.sin(env.time * 0.4 + seed) * 0.15
+            food["z"] += math.cos(env.time * 0.3 + seed) * 0.15
+
         update_sensors(body, env)
 
         output = net.activate(brain_inputs(body.get_sensors()))
         move_raw = float(output[0])
+        yaw_val = float(output[1])
 
         cmd = {
             "forward": max(0.0, min(1.0, move_raw)) if move_raw > 0.03 else 0.0,
             "backward": max(0.0, min(1.0, -move_raw)) if move_raw < -0.2 else 0.0,
             "turbo": 1.0 if len(output) > 4 and float(output[4]) > 0.72 else 0.0,
-            "yaw": float(output[1]),
+            "yaw": yaw_val,
             "pitch": float(output[2]) * 0.45,
             "roll": float(output[3]) * 0.35,
         }
 
         body.memory = max(-1.0, min(1.0, 0.95 * body.memory + 0.05 * float(output[5])))
 
-        wall_hit = body.update(dt, cmd)
-        floor_hit = clamp_to_environment(body, env, physics_config)
+        before_x, before_y, before_z = body.x, body.y, body.z
+        body.update(dt, cmd)
 
-        if wall_hit:
-            fitness -= 22.0
+        # Apply current and algae drag in evaluation too
+        cx, cy, cz = env.current_at(body.x, body.y, body.z, env.time)
+        body.x += cx * 0.2 * dt
+        body.y += cy * 0.2 * dt
+        body.z += cz * 0.2 * dt
 
-        if floor_hit:
-            fitness -= 6.0
+        algae_factor = body.sensors.get("algae_near", 0.0)
+        if algae_factor > 0.1:
+            drag = 1.0 - algae_factor * 0.4
+            body.x = before_x + (body.x - before_x) * drag
+            body.y = before_y + (body.y - before_y) * drag
+            body.z = before_z + (body.z - before_z) * drag
+
+        hit = clamp_to_environment(body, env, physics_config)
+
+        dx = body.x - before_x
+        dy = body.y - before_y
+        dz = body.z - before_z
+        step_dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+        body.last_step_speed = step_dist / dt
+        body.sensors["energy_status"] = body.energy / body.max_energy
+
+        metrics["total_distance"] += step_dist
+
+        if hit:
+            metrics["collisions"] += 1
+            if body.last_collision == "floor":
+                fitness -= 10.0
+            else:
+                fitness -= 30.0
 
         if check_eat(body, env):
-            eaten += 1
-            fitness += 180.0
+            metrics["eaten"] += 1
+            fitness += 250.0
             prev_food_dist = _nearest_food_distance(body, env)
 
         current_food_dist = _nearest_food_distance(body, env)
-
         if math.isfinite(prev_food_dist) and math.isfinite(current_food_dist):
             improvement = prev_food_dist - current_food_dist
-
             if improvement > 0:
-                fitness += improvement * 0.45
+                reward = improvement * 0.6
+                fitness += reward
+                metrics["approach_reward"] += reward
             else:
-                fitness += improvement * 0.04
+                fitness += improvement * 0.1
 
-            if current_food_dist < 180:
-                fitness += 0.35
-
-            if current_food_dist < 90:
-                fitness += 0.75
+            # Proximity reward
+            if current_food_dist < 100:
+                fitness += 1.0
+            elif current_food_dist < 200:
+                fitness += 0.4
 
         prev_food_dist = current_food_dist
 
-        dx = body.x - prev_x
-        dy = body.y - prev_y
-        dz = body.z - prev_z
+        # Stuck detection
+        if step_dist < 0.2:
+            idle_steps += 1
+            if idle_steps > 20:
+                fitness -= 1.0
+                metrics["stuck_steps"] += 1
+        else:
+            idle_steps = 0
+            fitness += 0.05 # Movement reward
 
-        step_dist = math.sqrt(dx * dx + dy * dy + dz * dz)
-        total_distance += step_dist
+        # Penalty for excessive spinning
+        recent_yaws.append(yaw_val)
+        if len(recent_yaws) > 100:
+            recent_yaws.pop(0)
+            avg_yaw = sum(recent_yaws) / len(recent_yaws)
+            if abs(avg_yaw) > 0.8:
+                fitness -= 0.5
 
-        prev_x, prev_y, prev_z = body.x, body.y, body.z
-
-        idle_steps = idle_steps + 1 if step_dist < 0.18 else 0
-
-        body.sensors["stuck"] = min(1.0, idle_steps / 80.0)
-        body.sensors["novelty"] = min(1.0, step_dist / 8.0)
-
-        if step_dist > 0.2:
-            fitness += 0.04
-
-        if idle_steps > 35:
-            fitness -= 2.5
-
-        cell = (
-            int(body.x // 50),
-            int(body.y // 50),
-            int(body.z // 50),
-        )
-
+        # Exploration bonus
+        cell = (int(body.x // 60), int(body.y // 60), int(body.z // 60))
         if cell not in visited_cells:
             visited_cells.add(cell)
-            fitness += 3.5
+            fitness += 4.0
 
-        steps += 1
+        metrics["steps"] += 1
 
-        if len(env.food) < 28:
+        # Increase food spawns as generations progress?
+        # Actually curriculum usually means making it harder.
+
+        if len(env.food) < 30:
             env.spawn_food(1)
 
-        fitness -= 0.003
+        fitness -= 0.01 # Time penalty
 
-    fitness += body.energy * 0.22
-    fitness += total_distance * 0.035
-    fitness += eaten * 60.0
+    # Final rewards/penalties
+    fitness += metrics["eaten"] * 100.0
+    fitness += body.energy * 0.2
 
-    return max(0.0, fitness), eaten, steps
+    if metrics["eaten"] == 0:
+        fitness *= 0.5 # Severe penalty for not eating anything
+
+    return max(0.0, fitness), metrics["eaten"], metrics["steps"]

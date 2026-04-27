@@ -82,11 +82,23 @@ class NEATRunner:
             self.save_checkpoint()
             logger.info(f"*** NEW BEST: {self.best_fitness:.1f} ***")
 
+    def _config_hash(self):
+        import hashlib
+        c = self.neat_config.genome_config
+        s = f"{c.num_inputs}|{c.num_outputs}|{c.initial_connection}"
+        return hashlib.md5(s.encode()).hexdigest()
+
     def save_checkpoint(self):
         try:
             with open("best_genome.pkl", "wb") as f:
                 pickle.dump(self.best_genome, f)
-            data = {"generation": self.generation, "best_fitness": self.best_fitness}
+            data = {
+                "generation": self.generation,
+                "best_fitness": self.best_fitness,
+                "config_hash": self._config_hash(),
+                "input_size": self.neat_config.genome_config.num_inputs,
+                "output_size": self.neat_config.genome_config.num_outputs,
+            }
             with open(CHECKPOINT_FILE, "w") as f:
                 json.dump(data, f)
             logger.info("Чекпоинт сохранён: поколение %d, фитнес %.1f", self.generation, self.best_fitness)
@@ -98,18 +110,28 @@ class NEATRunner:
             logger.info("Чекпоинт не найден, стартуем с нуля")
             return
         try:
-            from .evaluator import create_net
-            with open("best_genome.pkl", "rb") as f:
-                self.best_genome = pickle.load(f)
-            self.best_net = create_net(self.best_genome, self.neat_config)
             if Path(CHECKPOINT_FILE).exists():
                 with open(CHECKPOINT_FILE) as f:
                     data = json.load(f)
+
+                # Validation
+                current_hash = self._config_hash()
+                saved_hash = data.get("config_hash")
+                if saved_hash and saved_hash != current_hash:
+                    logger.warning("Checkpoint config hash mismatch! Ignoring old checkpoint.")
+                    return
+
                 self.generation = data.get("generation", 0)
                 self.best_fitness = data.get("best_fitness", -999999.0)
             else:
                 self.generation = 0
                 self.best_fitness = 0.0
+
+            from .evaluator import create_net
+            with open("best_genome.pkl", "rb") as f:
+                self.best_genome = pickle.load(f)
+            self.best_net = create_net(self.best_genome, self.neat_config)
+
             logger.info("Чекпоинт загружен: поколение %d, фитнес %.1f", self.generation, self.best_fitness)
         except Exception as e:
             logger.error(f"Ошибка загрузки чекпоинта: {e}, стартуем с нуля")

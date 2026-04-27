@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 import pickle
 import time
 from typing import Optional
@@ -49,7 +50,12 @@ class SimulationManager:
 
     def _init_demo(self):
         self.env.reset(initial_food=self.config.env.initial_food_count)
-        self.body = Body.random_placement(self.config.physics)
+        self.body = Body.random_placement(
+            self.config.physics,
+            env_width=self.env.width,
+            env_height=self.env.height,
+            env_depth=self.env.depth,
+        )
         clamp_to_environment(self.body, self.env, self.config.physics)
 
         self.demo_steps = 0
@@ -131,6 +137,7 @@ class SimulationManager:
             self._entropy_task = asyncio.create_task(self._entropy_refresh_loop())
 
             last_broadcast = 0.0
+            last_clients_count = 0
 
             while True:
                 now = time.perf_counter()
@@ -140,10 +147,13 @@ class SimulationManager:
                 if self.demo_active and self.body and self.runner.best_net:
                     self._update_demo(1.0 / self.sim_hz)
 
+                    current_clients_count = len(ws_handler.clients)
                     if now - last_broadcast >= 1.0 / self.broadcast_hz:
-                        self.visualization_data = self._build_viz_data(now)
+                        is_init = current_clients_count > last_clients_count
+                        self.visualization_data = self._build_viz_data(now, is_init=is_init)
                         await ws_handler.broadcast(self.visualization_data)
                         last_broadcast = now
+                        last_clients_count = current_clients_count
 
                 else:
                     logger.info("Демо завершено → запускаем следующее поколение")
@@ -198,6 +208,33 @@ class SimulationManager:
 
                     self.demo_active = False
 
+                elif action == "reset_training":
+                    logger.info("Resetting training requested")
+                    if self.training_process is not None:
+                        self.training_process.stop()
+
+                    import os
+                    for f in ["best_genome.pkl", "checkpoint.json"]:
+                        if os.path.exists(f):
+                            os.remove(f)
+
+                    # Re-init runner and process
+                    from evolution.runner import NEATRunner
+                    self.runner = NEATRunner(
+                        self.runner.neat_config_path if hasattr(self.runner, "neat_config_path") else "neat_config.ini",
+                        self.config.env,
+                        self.config.physics
+                    )
+                    if self.training_process is not None:
+                        from evolution.training_process import TrainingProcess
+                        self.training_process = TrainingProcess(
+                            self.runner.neat_config_path if hasattr(self.runner, "neat_config_path") else "neat_config.ini",
+                            self.config.env,
+                            self.config.physics
+                        )
+
+                    self.demo_active = False
+
                 handled += 1
 
             except Exception as e:
@@ -211,22 +248,19 @@ class SimulationManager:
             self.demo_active = False
             return
 
+        now = time.perf_counter()
+        self.env.time = now
+
+        # Update drifting food
+        for food in self.env.food:
+            seed = food.get("drift_seed", 0.0)
+            food["x"] += math.sin(now * 0.4 + seed) * 0.15
+            food["z"] += math.cos(now * 0.3 + seed) * 0.15
+
         update_sensors(self.body, self.env)
 
-        inputs = [
-            self.body.sensors["hunger"],
-            self.body.sensors.get("eye_left", 0.0),
-            self.body.sensors.get("eye_center", 0.0),
-            self.body.sensors.get("eye_right", 0.0),
-            self.body.sensors.get("smell", 0.0),
-            self.body.sensors.get("wall_left", 0.0),
-            self.body.sensors.get("wall_right", 0.0),
-            self.body.sensors.get("wall_front", 0.0),
-            self.body.sensors.get("memory", 0.0),
-            self.body.sensors.get("novelty", 0.0),
-            self.body.sensors.get("stuck", 0.0),
-            self.body.sensors.get("rand", 0.0),
-        ]
+        from evolution.evaluator import brain_inputs
+        inputs = brain_inputs(self.body.get_sensors())
 
         self.last_inputs = [float(x) for x in inputs]
 
@@ -251,6 +285,21 @@ class SimulationManager:
         before_z = self.body.z
 
         self.body.update(dt, cmd)
+
+        # Apply current and algae drag
+        cx, cy, cz = self.env.current_at(self.body.x, self.body.y, self.body.z, self.env.time)
+        self.body.x += cx * 0.2 * dt
+        self.body.y += cy * 0.2 * dt
+        self.body.z += cz * 0.2 * dt
+
+        algae_factor = self.body.sensors.get("algae_near", 0.0)
+        if algae_factor > 0.1:
+            drag = 1.0 - algae_factor * 0.4
+            self.body.x = before_x + (self.body.x - before_x) * drag
+            self.body.y = before_y + (self.body.y - before_y) * drag
+            self.body.z = before_z + (self.body.z - before_z) * drag
+
+        # clamp_to_environment теперь обрабатывает и стены, и пол, и потолок
         clamp_to_environment(self.body, self.env, self.config.physics)
 
         dx = self.body.x - before_x
@@ -258,6 +307,8 @@ class SimulationManager:
         dz = self.body.z - before_z
 
         self.last_step_distance = (dx * dx + dy * dy + dz * dz) ** 0.5
+        self.body.last_step_speed = self.last_step_distance / dt
+        self.body.sensors["energy_status"] = self.body.energy / self.body.max_energy
 
         if check_eat(self.body, self.env):
             self.demo_steps = max(0, self.demo_steps - int(self.sim_hz * 3))
@@ -267,14 +318,20 @@ class SimulationManager:
         if self.demo_steps % (self.sim_hz * 5) == 0 and len(self.env.food) < 20:
             self.env.spawn_food(1)
 
-    def _build_viz_data(self, now: float):
+    def _build_viz_data(self, now: float, is_init: bool = False):
         if not self.body:
             return None
 
+        env_state = self.env.get_state()
+        if not is_init:
+            # For snapshots, remove static data
+            env_state.pop("terrain", None)
+            env_state.pop("algae", None)
+
         return {
-            "type": "snapshot",
+            "type": "init" if is_init else "snapshot",
             "timestamp": now,
-            "environment": self.env.get_state(),
+            "environment": env_state,
             "body": self.body.get_state(),
             "sensors": self.body.get_sensors(),
             "gen": self.runner.generation,
@@ -283,6 +340,8 @@ class SimulationManager:
             "last_cmd": self.last_cmd,
             "last_outputs": self.last_outputs,
             "brain": self._genome_to_graph(self.runner.best_genome),
+            "training_busy": self.training_process.busy if self.training_process else False,
+            "pending_generations": self.training_process.pending_generations if self.training_process else 0,
             "entropy": {
                 "source": GLOBAL_ENTROPY.last_source,
                 "pool": len(GLOBAL_ENTROPY.pool),
@@ -305,18 +364,11 @@ class SimulationManager:
         connections = []
 
         input_labels = [
-            "hunger",
-            "eye_L",
-            "eye_C",
-            "eye_R",
-            "smell",
-            "wall_L",
-            "wall_R",
-            "wall_F",
-            "memory",
-            "novelty",
-            "stuck",
-            "rand",
+            "hunger", "eye_L", "eye_C", "eye_R", "smell",
+            "wall_L", "wall_R", "wall_F", "memory", "novelty",
+            "stuck", "rand", "food_dx", "food_dy", "food_dz",
+            "food_dist", "floor", "ceil", "algae", "speed",
+            "curr_x", "curr_y", "curr_z", "energy"
         ]
 
         output_labels = ["move", "yaw", "pitch", "roll", "turbo", "mem"]

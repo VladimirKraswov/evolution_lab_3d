@@ -285,24 +285,55 @@ function drawFood(ctx, food, center, camera, width, height) {
     .filter(x => x.q.visible)
     .sort((a, b) => b.q.d - a.q.d);
 
-  for (const { q } of sorted) {
-    const r = clamp(q.s * 9, 2.5, 14);
+  for (const { f, q } of sorted) {
+    const isRich = f.type === 'rich';
+    const r = clamp(q.s * (isRich ? 14 : 9), 2.5, 20);
 
     ctx.beginPath();
-    ctx.fillStyle = '#86efac';
-    ctx.shadowColor = '#22c55e';
-    ctx.shadowBlur = 16;
+    ctx.fillStyle = isRich ? '#fbbf24' : '#86efac';
+    ctx.shadowColor = isRich ? '#f59e0b' : '#22c55e';
+    ctx.shadowBlur = isRich ? 24 : 16;
     ctx.arc(q.x, q.y, r, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(220,252,231,.8)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = isRich ? 'rgba(254,243,199,.9)' : 'rgba(220,252,231,.8)';
+    ctx.lineWidth = isRich ? 2 : 1;
     ctx.stroke();
   }
 }
 
-function drawBody(ctx, body, center, camera, width, height) {
+function drawCurrents(ctx, env, center, camera, width, height, time) {
+  const count = 40;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(125,211,252,.15)';
+  ctx.lineWidth = 1;
+
+  for (let i = 0; i < count; i++) {
+    const x = ((i * 137) % env.width);
+    const y = ((i * 223) % env.height);
+    const z = ((i * 359) % env.depth);
+
+    const q1 = project({ x, y, z }, center, camera, width, height);
+    if (!q1.visible) continue;
+
+    // Use current_at logic
+    const cx = Math.sin(x * 0.005 + time * 0.5) * 5.0;
+    const cz = Math.cos(z * 0.005 + time * 0.5) * 5.0;
+    const cy = Math.sin(y * 0.01 + time * 0.3) * 2.0;
+
+    const q2 = project({ x: x + cx * 2, y: y + cy * 2, z: z + cz * 2 }, center, camera, width, height);
+    if (!q2.visible) continue;
+
+    ctx.beginPath();
+    ctx.moveTo(q1.x, q1.y);
+    ctx.lineTo(q2.x, q2.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawBody(ctx, body, center, camera, width, height, time) {
   const q = project(body, center, camera, width, height);
 
   if (!q.visible) return;
@@ -323,11 +354,24 @@ function drawBody(ctx, body, center, camera, width, height) {
   grad.addColorStop(1, '#2563eb');
 
   ctx.fillStyle = grad;
+
+  // Fish body
   ctx.beginPath();
   ctx.moveTo(0, -size);
-  ctx.lineTo(size * 0.72, size * 0.82);
-  ctx.lineTo(0, size * 0.35);
-  ctx.lineTo(-size * 0.72, size * 0.82);
+  ctx.quadraticCurveTo(size * 0.8, 0, 0, size);
+  ctx.quadraticCurveTo(-size * 0.8, 0, 0, -size);
+  ctx.fill();
+
+  // Tail animation
+  const speed = body.speed_sensor || 0;
+  const tailSwing = Math.sin(time * 15 * (1 + speed)) * 0.4;
+
+  ctx.beginPath();
+  ctx.moveTo(0, size * 0.8);
+  ctx.lineTo(size * 0.5 * tailSwing, size * 1.5);
+  ctx.lineTo(size * 0.8 + size * 0.2 * tailSwing, size * 1.8);
+  ctx.lineTo(-size * 0.8 + size * 0.2 * tailSwing, size * 1.8);
+  ctx.lineTo(size * 0.5 * tailSwing, size * 1.5);
   ctx.closePath();
   ctx.fill();
 
@@ -336,11 +380,12 @@ function drawBody(ctx, body, center, camera, width, height) {
   ctx.lineWidth = 1.2;
   ctx.stroke();
 
-  ctx.strokeStyle = 'rgba(102,227,255,.5)';
+  // Eyes
+  ctx.fillStyle = '#0f172a';
   ctx.beginPath();
-  ctx.moveTo(0, -size);
-  ctx.lineTo(0, -size * 2.2);
-  ctx.stroke();
+  ctx.arc(size * 0.25, -size * 0.6, size * 0.1, 0, Math.PI * 2);
+  ctx.arc(-size * 0.25, -size * 0.6, size * 0.1, 0, Math.PI * 2);
+  ctx.fill();
 
   ctx.restore();
 }
@@ -499,12 +544,13 @@ export function drawWorld(ctx, data, camera, width, height) {
       : performance.now() / 1000;
 
   drawAquariumBackGlass(ctx, env, center, camera, width, height);
+  drawCurrents(ctx, env, center, camera, width, height, timeSeconds);
   drawSandMesh(ctx, env.terrain, center, camera, width, height);
   drawAlgae(ctx, env.algae || [], body, center, camera, width, height, timeSeconds);
   drawBox(ctx, env, center, camera, width, height);
 
   drawFood(ctx, env.food || [], center, camera, width, height);
-  drawBody(ctx, body, center, camera, width, height);
+  drawBody(ctx, body, center, camera, width, height, timeSeconds);
 
   drawAquariumFrontGlass(ctx, env, center, camera, width, height);
 

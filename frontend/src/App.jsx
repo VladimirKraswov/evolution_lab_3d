@@ -5,6 +5,7 @@ import { WorldCanvas } from './components/WorldCanvas.jsx';
 import { BrainCanvas } from './components/BrainCanvas.jsx';
 import { Stat } from './components/Stat.jsx';
 import { Sensors } from './components/Sensors.jsx';
+import { BrainInspector } from './components/BrainInspector.jsx';
 import { Hud } from './components/Hud.jsx';
 import { Toolbar } from './components/Toolbar.jsx';
 
@@ -42,6 +43,9 @@ export function App() {
 
         <h2>Brain graph</h2>
         <BrainCanvas brain={data?.brain} />
+
+        <h2>Brain Inspector</h2>
+        <BrainInspector data={data} />
 
         <h2>Sensors</h2>
         <Sensors sensors={data?.sensors} />

@@ -45,11 +45,25 @@ export function useSocket() {
         retry = 350;
       };
 
+      const environmentStatic = { terrain: null, algae: null };
+
       ws.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data);
 
-          if (payload.environment || payload.body || payload.brain) {
+          if (payload.type === 'init' || payload.type === 'snapshot') {
+            if (payload.environment) {
+              if (payload.environment.terrain) {
+                environmentStatic.terrain = payload.environment.terrain;
+              } else {
+                payload.environment.terrain = environmentStatic.terrain;
+              }
+              if (payload.environment.algae) {
+                environmentStatic.algae = payload.environment.algae;
+              } else {
+                payload.environment.algae = environmentStatic.algae;
+              }
+            }
             latestPayloadRef.current = payload;
             scheduleFlush();
           } else if (payload.status) {
